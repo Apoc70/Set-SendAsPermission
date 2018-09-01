@@ -52,7 +52,7 @@
     
     .\Set-SendAsPermission.ps1 -SendAsGroup 'AX-Sales' -SendAsUserUpn 'ax@granikoslabs.eu' -ExchangeOnline
 #>  
-[cmdletbinding(SupportsShouldProcess=$True)]
+[cmdletbinding(SupportsShouldProcess)]
 Param(
   [string]$SendAsGroup = '', 
   [string]$SendAsUserUpn = '',
@@ -92,12 +92,12 @@ $logger.Purge()
 # Fetch all group members first 
 $SendAsMembers = Get-ADGroupMember -Identity $SendAsGroup -ErrorAction SilentlyContinue
 
-$GroupCount = (Measure-Object -InputObject $SendAsMembers).Count
+$GroupCount = ($SendAsMembers | Measure-Object).Count
 
 if ($GroupCount -ne 0) {
     # The group is not empty, so let's continue
 
-    $logger.Write("Group [$($SendAsGroup)] contains [$($GroupCount) members]")
+    $logger.Write(('Group [{0}] contains [{1} members]' -f $SendAsGroup, $GroupCount))
 
     foreach($User in $SendAsMembers) {
         $Mailbox = $null
@@ -106,53 +106,53 @@ if ($GroupCount -ne 0) {
 
         $UserUpn = (Get-ADUser -Identity $User.samAccountName).UserPrincipalName
 
-        $logger.Write("Checking AD user [$($User.samAccountName)] - UPN [$($UserUpn)]")
+        $logger.Write(('Checking AD user [{0}] - UPN [{1}]' -f $User.samAccountName, ($UserUpn)))
 
         # Check if user mailbox exists
         $Mailbox = Get-Mailbox -Identity $UserUpn -ErrorAction SilentlyContinue
         
         if($Mailbox -eq $null) {
-            $logger.Write("Mailbox [$($UserUpn)] does NOT exist",$LOG_Warning)
+            $logger.Write(('Mailbox [{0}] does NOT exist' -f $UserUpn),$LOG_Warning)
             continue
         }
 
         if($ExchangeOnline) {
             # we are using Exchange Online
             
-            $SendAsCount = (Measure-Object -InputObject ($Mailbox | Get-RecipientPermission | Where-Object {$_.Trustee -ne "NT AUTHORITY\SELF" -and $_.Trustee -ne "NULL SID" -and $_.Trustee -eq $SendAsUserUpn})).Count
+            $SendAsCount = (($Mailbox | Get-RecipientPermission | Where-Object {$_.Trustee -ne 'NT AUTHORITY\SELF' -and $_.Trustee -ne 'NULL SID' -and $_.Trustee -eq $SendAsUserUpn}) | Measure-Object).Count
 
             if($SendAsCount -eq 0) {
-                $logger.Write("Setting Send-As for [$($SendAsUserUpn)] on mailbox [$($UserUpn)]")
+                $logger.Write(('Setting Send-As for [{0}] on mailbox [{1}]' -f $SendAsUserUpn, $UserUpn))
                 
                 # Configure Send-As permission for $SendasUserUpn on target mailbox $UserUpn in Exchange Online    
                 $null = Add-RecipientPermission -Identity $UserUpn -AccessRights SendAs -Trustee $SendAsUserUpn -Confirm:$false
                 
             }
             else {
-                $logger.Write("Not action required on mailbox [$($UserUpn)]") 
+                $logger.Write(('Not action required on mailbox [{0}]' -f $UserUpn)) 
             }
         }
         else {
             # we configure on-premises mailboxes
-            $SendAsCount = (Measure-Object -InputObject ($Mailbox | Get-ADPermission | Where-Object {($_.ExtendedRights -like '*send-as*') -and -not ($_.User -like 'NT AUTHORITY\SELF')})).Count
+            $SendAsCount = (($Mailbox | Get-ADPermission | Where-Object {($_.ExtendedRights -like '*send-as*') -and -not ($_.User -like 'NT AUTHORITY\SELF')}) | Measure-Object).Count
             
             if($SendAsCount -eq 0) {
-                $logger.Write("Setting Send-As for [$($SendAsUserUpn)] on mailbox [$($UserUpn)]")
+                $logger.Write(('Setting Send-As for [{0}] on mailbox [{1}]' -f $SendAsUserUpn, $UserUpn))
 
                 # Configure Send-As permission for $SendAsUserUpn on target mailbox $UserUpn in an on-premises Exchange organization
-                $null = $Mailbox | Add-ADPermission -User $SendAsUserUpn -AccessRights ExtendedRight -ExtendedRights "Send As"
+                $null = $Mailbox | Add-ADPermission -User $SendAsUserUpn -AccessRights ExtendedRight -ExtendedRights 'Send As'
             }
             else {
-                $logger.Write("Not action required on mailbox [$($UserUpn)]") 
+                $logger.Write(('Not action required on mailbox [{0}]' -f $UserUpn)) 
             }
         }
     }
   
 }
 else {
-    $logger.Write("Group [$($SendAsGroup)] is emtpy!", $LOG_Warning)
+    $logger.Write(('Group [{0}] is emtpy!' -f $SendAsGroup), $LOG_Warning)
 }
 
 $logger.Write('Script finished #########################################')
 
-Write-Host "Script finished. See log file for details."
+Write-Host 'Script finished. See log file for details.'
